@@ -1,6 +1,6 @@
 # OSEP_Prep
 
-## Bunch of scripts and some notes for the OSEP exam.
+## Bunch of scripts and some notes for the OSEP.
 -----------------------------------------------------
 #### Just check the content of the scripts.
 - more stuff will come, mostly C++ versions of the C# original versions
